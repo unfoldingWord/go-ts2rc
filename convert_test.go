@@ -70,6 +70,98 @@ func TestConvertTN(t *testing.T) {
 	}
 }
 
+func writeMinimalBible(t *testing.T, dir string) {
+	t.Helper()
+	manifest := `{
+  "package_version": 7,
+  "project": {"id": "tit", "name": "Tito"},
+  "type": {"id": "text"},
+  "resource": {"id": "reg", "name": "Regular"},
+  "target_language": {"id": "es-419", "name": "Español Latin America", "direction": "ltr"},
+  "translators": ["Test Translator"]
+}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeChunk := func(rel, content string) {
+		t.Helper()
+		path := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeChunk("front/title.txt", "Tito")
+	writeChunk("01/title.txt", "Capítulo 1")
+	writeChunk("01/01.txt", `\c 1 \v 1 Pablo, un siervo de Dios \v 2 con la esperanza segura`)
+	writeChunk("01/03.txt", `\v 3 Pero en el tiempo correcto \v 4 A Tito`)
+	writeChunk("03/01.txt", `\c 3 \v 1 Recuerdales someterse`)
+}
+
+func TestConvertBibleUSFMLayout(t *testing.T) {
+	inDir := t.TempDir()
+	writeMinimalBible(t, inDir)
+	outDir := filepath.Join(t.TempDir(), "rc")
+
+	rep := Convert(context.Background(), inDir, outDir, Options{})
+	if !rep.OK {
+		t.Fatalf("conversion failed: %s", rep.Error)
+	}
+	if rep.Class != "bible" {
+		t.Fatalf("class: got %q", rep.Class)
+	}
+
+	buf, err := os.ReadFile(filepath.Join(outDir, "57-TIT.usfm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := `\id TIT Tito
+\usfm 3.0
+\ide UTF-8
+\h Tito
+\toc1 Tito
+\toc2 Tito
+\toc3 Tito
+\mt1 Tito
+
+\c 1
+\cl Capítulo 1
+\p
+\v 1 Pablo, un siervo de Dios
+\v 2 con la esperanza segura
+\p
+\v 3 Pero en el tiempo correcto
+\v 4 A Tito
+
+\c 3
+\p
+\v 1 Recuerdales someterse
+`
+	if got := string(buf); got != want {
+		t.Fatalf("USFM layout mismatch:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
+
+func TestFormatChunkUSFM(t *testing.T) {
+	in := `\v 4 A Tito, un verdadero hijo. \p \v 5 Para este propósito \q1 linea poetica`
+	want := "\\v 4 A Tito, un verdadero hijo.\n\\p\n\\v 5 Para este propósito\n\\q1 linea poetica"
+	if got := formatChunkUSFM(in); got != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
+	}
+	// package_version 3 compact style is normalized before formatting
+	if got := formatChunkUSFM(normalizeUSFMChunk(`\v1 uno \v2 dos`)); got != "\\v 1 uno\n\\v 2 dos" {
+		t.Fatalf("compact: got:\n%s", got)
+	}
+	// already-formatted input is unchanged (idempotent)
+	formatted := "\\p\n\\v 1 uno\n\\v 2 dos"
+	if got := formatChunkUSFM(formatted); got != formatted {
+		t.Fatalf("idempotency: got:\n%s", got)
+	}
+}
+
 func TestWriteReport(t *testing.T) {
 	rep := &Report{Source: "a", Output: "b", OK: true, Stats: map[string]int{"rows": 1}}
 	path := filepath.Join(t.TempDir(), "r.json")

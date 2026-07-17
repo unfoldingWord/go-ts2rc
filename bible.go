@@ -15,9 +15,11 @@ import (
 var (
 	compactChapterRe = regexp.MustCompile(`\\c(\d)`)
 	compactVerseRe   = regexp.MustCompile(`\\v(\d)`)
-	chapterMarkerRe  = regexp.MustCompile(`\\c\s+\d`)
 	verseMarkerRe    = regexp.MustCompile(`\\v\s+\d`)
-	paraMarkerRe     = regexp.MustCompile(`^\\(p|m|q\d?|pi\d?|nb|b)\b`)
+	paraMarkerRe     = regexp.MustCompile(`^\\(pi\d?|q\d?|nb|p|m|b)\b`)
+	leadingChapterRe = regexp.MustCompile(`^\\c\s+(\d+)\s*`)
+	verseBreakRe     = regexp.MustCompile(`[ \t]*(\\v\s+\d)`)
+	paraBreakRe      = regexp.MustCompile(`[ \t]*(\\(?:pi\d?|q\d?|nb|p|m|b)\b)`)
 )
 
 // normalizeUSFMChunk repairs the compact marker style found in package_version 3
@@ -26,6 +28,22 @@ func normalizeUSFMChunk(text string) string {
 	text = compactChapterRe.ReplaceAllString(text, `\c $1`)
 	text = compactVerseRe.ReplaceAllString(text, `\v $1`)
 	return strings.TrimSpace(text)
+}
+
+// formatChunkUSFM puts every verse and paragraph-level marker of a chunk on
+// its own line and drops blank lines, so assembled chapters read one marker
+// per line instead of the single run-on line found in ts chunk files.
+func formatChunkUSFM(text string) string {
+	text = verseBreakRe.ReplaceAllString(text, "\n$1")
+	text = paraBreakRe.ReplaceAllString(text, "\n$1")
+	var lines []string
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // convertBible assembles a single USFM file from ts chapter/chunk .txt files.
@@ -67,8 +85,11 @@ func convertBible(inDir, outDir string, m *ts.Manifest, rep *Report) error {
 			rep.Warnf("chapter %s: %v", d.Name, err)
 			continue
 		}
+
+		// Format all chunks first so the chapter heading is only written when
+		// the chapter actually has content.
 		chapterNum := stripNum(d.Name)
-		first := true
+		var chunks []string
 		for _, f := range files {
 			if f.Num < 0 {
 				continue // title.txt handled below, reference.txt not applicable
@@ -78,18 +99,31 @@ func convertBible(inDir, outDir string, m *ts.Manifest, rep *Report) error {
 				rep.Warnf("chapter %s chunk %s: empty, skipped", d.Name, f.Base)
 				continue
 			}
-			if first {
-				if !chapterMarkerRe.MatchString(text) {
-					b.WriteString("\\c " + chapterNum + "\n")
+			// Relocate a leading \c marker: it is re-emitted on its own line
+			// at the top of the chapter, above the first \p.
+			if m := leadingChapterRe.FindStringSubmatch(text); m != nil {
+				chapterNum = m[1]
+				text = strings.TrimSpace(text[len(m[0]):])
+				if text == "" {
+					continue // chunk held only the \c marker
 				}
-				if cl := readTextFile(filepath.Join(d.Path, "title.txt")); cl != "" {
-					b.WriteString("\\cl " + cl + "\n")
-				}
-				first = false
 			}
 			if !verseMarkerRe.MatchString(text) {
 				rep.Warnf("chapter %s chunk %s: no \\v marker found; text included as-is", d.Name, f.Base)
 			}
+			chunks = append(chunks, formatChunkUSFM(text))
+		}
+		if len(chunks) == 0 {
+			continue
+		}
+
+		// Blank line between the header/previous chapter and this chapter.
+		b.WriteString("\n")
+		b.WriteString("\\c " + chapterNum + "\n")
+		if cl := readTextFile(filepath.Join(d.Path, "title.txt")); cl != "" {
+			b.WriteString("\\cl " + cl + "\n")
+		}
+		for _, text := range chunks {
 			if !paraMarkerRe.MatchString(text) {
 				b.WriteString("\\p\n")
 			}
