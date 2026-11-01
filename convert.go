@@ -125,6 +125,9 @@ func Convert(ctx context.Context, inDir, outDir string, opts Options) *Report {
 		return fail(err)
 	}
 	rep.Version = m.PackageVersion
+	if m.GeneratorName == "tc-desktop" {
+		return fail(fmt.Errorf("manifest.json was written by tc-desktop: a translationCore project, not translationStudio (convert it with go-tc2rc)"))
+	}
 	rep.Class = m.Class()
 	if rep.Class == "" {
 		return fail(fmt.Errorf("unrecognized ts type %q (project %q)", m.TypeID, m.ProjectID))
@@ -146,6 +149,8 @@ func Convert(ctx context.Context, inDir, outDir string, opts Options) *Report {
 		err = convertHelps(inDir, outDir, m, rep.Class, rep)
 	case "tw":
 		err = convertTW(inDir, outDir, m, opts, rep)
+	case "ta":
+		err = convertTA(inDir, outDir, m, rep)
 	}
 	if err != nil {
 		os.RemoveAll(outDir) // don't leave a half-written RC repo behind

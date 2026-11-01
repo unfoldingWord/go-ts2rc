@@ -88,3 +88,56 @@ func TestClassOBS(t *testing.T) {
 		t.Fatalf("got %q", m.Class())
 	}
 }
+
+func loadManifestJSON(t *testing.T, manifest string) (*Manifest, error) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return LoadManifest(dir)
+}
+
+func TestLoadManifestV2Slugs(t *testing.T) {
+	m, err := loadManifestJSON(t, `{"package_version": 2, "slug": "phm", "target_language": {"slug": "aa", "name": "Afaraf"}, "generator": {"name": "ts-android", "build": 104}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.ProjectID != "phm" || m.Language.ID != "aa" || m.Class() != "bible" {
+		t.Fatalf("unexpected: %+v class %q", m, m.Class())
+	}
+}
+
+func TestLoadManifestProjectIDKeepsProjectType(t *testing.T) {
+	m, err := loadManifestJSON(t, `{"package_version": 3, "project_id": "gen", "project": {"type": "tn"}, "target_language": {"id": "en"}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.ProjectID != "gen" || m.Class() != "tn" {
+		t.Fatalf("unexpected: %+v class %q", m, m.Class())
+	}
+}
+
+func TestLoadManifestVersionFloor(t *testing.T) {
+	if _, err := loadManifestJSON(t, `{"package_version": 1, "project": {"id": "obs"}, "type": {"id": "text"}}`); err != nil {
+		t.Fatalf("package_version 1 should load: %v", err)
+	}
+	if _, err := loadManifestJSON(t, `{"package_version": 0, "project": {"id": "obs"}}`); err == nil {
+		t.Fatal("package_version 0 should be rejected")
+	}
+}
+
+func TestClassHelpsWithoutType(t *testing.T) {
+	for _, tc := range []struct {
+		m    Manifest
+		want string
+	}{
+		{Manifest{TypeID: "text", ProjectID: "tw"}, "tw"},
+		{Manifest{TypeID: "text", ProjectID: "ta"}, "ta"},
+		{Manifest{TypeID: "ta", ProjectID: "vol1"}, "ta"},
+	} {
+		if got := tc.m.Class(); got != tc.want {
+			t.Fatalf("%+v: got %q, want %q", tc.m, got, tc.want)
+		}
+	}
+}
