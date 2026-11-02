@@ -109,7 +109,7 @@ type Options struct {
 type Report struct {
     Source   string         // input ts directory
     Output   string         // output RC directory
-    Class    string         // bible | obs | tq | tn | obs-tq | obs-tn | tw
+    Class    string         // bible | obs | tq | tn | obs-tq | obs-tn | tw | ta
     Version  int            // package_version
     OK       bool
     Error    string         // set when OK is false
@@ -130,7 +130,7 @@ type Report struct {
 | tn + obs | `obs-tn` | TSV OBS Translation Notes | `tn_OBS.tsv` |
 | tw + bible | `tw` | Translation Words | `bible/{kt\|names\|other}/{word}.md` |
 
-Supports translationStudio `package_version` 3 and 5–8 (v3 and v5+ manifest schemas).
+Supports translationStudio `package_version` 1–8: the v1–2 ts-android schema (`slug`, `target_language.slug`), v3 (`project_id`/`project.type`, flat `resource_id`), and v5+ (`type.id`, `resource.id`).
 
 ## Error handling
 

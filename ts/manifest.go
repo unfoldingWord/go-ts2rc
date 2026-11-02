@@ -11,12 +11,13 @@ import (
 )
 
 // Manifest is the normalized view of a translationStudio manifest.json.
-// It is parsed from a map so that the two schemas (package_version 3 and 5–8)
-// and all their lenient value typings (int/string/junk) normalize without error.
+// It is parsed from a map so that the schemas (package_version 1–2 ts-android
+// slugs, 3, and 5–8) and all their lenient value typings (int/string/junk)
+// normalize without error.
 type Manifest struct {
 	PackageVersion int
-	TypeID         string // text | tq | tn | tw
-	ProjectID      string // book code | obs | bible (tw)
+	TypeID         string // text | tq | tn | tw | ta
+	ProjectID      string // book code | obs | bible (tw) | vol1/vol2 (ta)
 	ProjectName    string
 	ResourceID     string
 	ResourceName   string
@@ -98,12 +99,19 @@ func LoadManifest(repoDir string) (*Manifest, error) {
 
 	m := &Manifest{}
 	m.PackageVersion = asInt(raw["package_version"])
-	if m.PackageVersion < 3 {
-		return nil, fmt.Errorf("package_version %d is not a tS manifest (want 3-8)", m.PackageVersion)
+	if m.PackageVersion < 1 {
+		return nil, fmt.Errorf("package_version %d is not a tS manifest (want 1-8)", m.PackageVersion)
 	}
 
+	// project: project.id, else v3 flat project_id, else v1–2 slug
 	proj := getMap(raw, "project")
 	m.ProjectID = strings.ToLower(strings.TrimSpace(asString(proj["id"])))
+	if m.ProjectID == "" {
+		m.ProjectID = strings.ToLower(strings.TrimSpace(asString(raw["project_id"])))
+	}
+	if m.ProjectID == "" {
+		m.ProjectID = strings.ToLower(strings.TrimSpace(asString(raw["slug"])))
+	}
 	m.ProjectName = strings.TrimSpace(asString(proj["name"]))
 
 	// type: v5+ type.id, v3 project.type; default "text"
@@ -128,9 +136,14 @@ func LoadManifest(repoDir string) (*Manifest, error) {
 	m.GeneratorName = asString(gen["name"])
 	m.GeneratorBuild = asString(gen["build"])
 
+	// target_language: id, or v1–2 slug
 	tl := getMap(raw, "target_language")
+	langID := strings.TrimSpace(asString(tl["id"]))
+	if langID == "" {
+		langID = strings.TrimSpace(asString(tl["slug"]))
+	}
 	m.Language = Language{
-		ID:        strings.TrimSpace(asString(tl["id"])),
+		ID:        langID,
 		Name:      strings.TrimSpace(asString(tl["name"])),
 		Direction: strings.TrimSpace(asString(tl["direction"])),
 	}
@@ -186,12 +199,14 @@ func LoadManifest(repoDir string) (*Manifest, error) {
 }
 
 // Class returns the conversion class for dispatch.
-// One of: bible, obs, tq, tn, obs-tq, obs-tn, tw — or "" if unrecognized.
+// One of: bible, obs, tq, tn, obs-tq, obs-tn, tw, ta — or "" if unrecognized.
+// A text project named tw or ta is a help with no type recorded, not a book.
 func (m *Manifest) Class() string {
 	switch m.TypeID {
 	case "text":
-		if m.ProjectID == "obs" {
-			return "obs"
+		switch m.ProjectID {
+		case "obs", "tw", "ta":
+			return m.ProjectID
 		}
 		return "bible"
 	case "tq":
@@ -206,6 +221,8 @@ func (m *Manifest) Class() string {
 		return "tn"
 	case "tw":
 		return "tw"
+	case "ta":
+		return "ta"
 	}
 	return ""
 }

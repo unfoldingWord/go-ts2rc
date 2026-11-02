@@ -176,3 +176,79 @@ func TestWriteReport(t *testing.T) {
 		t.Fatalf("unexpected report: %s", buf)
 	}
 }
+
+func TestConvertTA(t *testing.T) {
+	inDir := t.TempDir()
+	manifest := `{"package_version": 6, "project": {"id": "vol1", "name": "translationAcademy Vol 1"}, "type": {"id": "ta"}, "target_language": {"id": "fr", "name": "français"}}`
+	if err := os.WriteFile(filepath.Join(inDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ch := filepath.Join(inDir, "01")
+	if err := os.MkdirAll(ch, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, chunk := range map[string]string{
+		"vol1_translate_figs_metaphor.txt": `[{"title":"Métaphore","body":"Une métaphore est..."}]`,
+		"vol1_intro_ta_intro.txt":          `[{"title":"Introduction","body":"Bienvenue"}]`,
+	} {
+		if err := os.WriteFile(filepath.Join(ch, name), []byte(chunk), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	outDir := filepath.Join(t.TempDir(), "rc")
+
+	rep := Convert(context.Background(), inDir, outDir, Options{})
+	if !rep.OK {
+		t.Fatalf("conversion failed: %s", rep.Error)
+	}
+	if rep.Class != "ta" || rep.Stats["articles"] != 2 {
+		t.Fatalf("class %q stats %v", rep.Class, rep.Stats)
+	}
+	if got := readTextFile(filepath.Join(outDir, "translate", "figs_metaphor", "title.md")); got != "Métaphore" {
+		t.Fatalf("title.md: %q", got)
+	}
+	if got := readTextFile(filepath.Join(outDir, "intro", "ta_intro", "01.md")); got != "Bienvenue" {
+		t.Fatalf("01.md: %q", got)
+	}
+	s := readTextFile(filepath.Join(outDir, "manifest.yaml"))
+	intro, translate := strings.Index(s, "identifier: intro"), strings.Index(s, "identifier: translate")
+	if !strings.Contains(s, "subject: Translation Academy") || intro < 0 || translate < intro {
+		t.Fatalf("manifest should list intro before translate under Translation Academy:\n%s", s)
+	}
+}
+
+func TestConvertV2Bible(t *testing.T) {
+	inDir := t.TempDir()
+	manifest := `{"package_version": 2, "slug": "phm", "target_language": {"slug": "aa", "name": "Afaraf", "direction": "ltr"}, "generator": {"name": "ts-android", "build": 104}}`
+	if err := os.WriteFile(filepath.Join(inDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ch := filepath.Join(inDir, "01")
+	if err := os.MkdirAll(ch, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ch, "01.txt"), []byte("\\c 1\n\\p\n\\v 1 Grace be with you."), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outDir := filepath.Join(t.TempDir(), "rc")
+
+	rep := Convert(context.Background(), inDir, outDir, Options{})
+	if !rep.OK {
+		t.Fatalf("conversion failed: %s", rep.Error)
+	}
+	if !strings.Contains(readTextFile(filepath.Join(outDir, "58-PHM.usfm")), `\v 1 Grace be with you.`) {
+		t.Fatal("58-PHM.usfm is missing the verse")
+	}
+}
+
+func TestConvertRejectsTCDesktopManifest(t *testing.T) {
+	inDir := t.TempDir()
+	manifest := `{"package_version": 1, "generator": {"name": "tc-desktop"}, "project": {"id": "tit"}, "target_language": {"id": "abu"}}`
+	if err := os.WriteFile(filepath.Join(inDir, "manifest.json"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rep := Convert(context.Background(), inDir, filepath.Join(t.TempDir(), "rc"), Options{})
+	if rep.OK || !strings.Contains(rep.Error, "translationCore") {
+		t.Fatalf("want a translationCore error, got OK=%v %q", rep.OK, rep.Error)
+	}
+}
