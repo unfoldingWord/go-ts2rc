@@ -93,6 +93,10 @@ Converts a translationStudio repository to RC format.
 
 Returns a `Report`. Check `Report.OK` for success. On hard failure, incomplete output is removed and `Report.Error` is set. Non-fatal issues appear in `Report.Warnings`.
 
+### `Supports(subject) bool` and `SupportedSubjects() []string`
+
+Report whether `Convert` converts a translationStudio project of a subject, and list those subjects. A project's subject is named after the resource it translates: `Bible`, `Open Bible Stories`, `Translation Notes`, `Translation Questions`, `OBS Translation Notes`, `OBS Translation Questions`, `Translation Words` and `Translation Academy`. DCS uses it to offer a Scripture Burrito download only for tS repos that convert.
+
 ### Options
 
 ```go
@@ -129,6 +133,7 @@ type Report struct {
 | tq + obs | `obs-tq` | TSV OBS Translation Questions | `tq_OBS.tsv` |
 | tn + obs | `obs-tn` | TSV OBS Translation Notes | `tn_OBS.tsv` |
 | tw + bible | `tw` | Translation Words | `bible/{kt\|names\|other}/{word}.md` |
+| ta + manual | `ta` | Translation Academy | `{manual}/{slug}/{title,01}.md` |
 
 Supports translationStudio `package_version` 1–8: the v1–2 ts-android schema (`slug`, `target_language.slug`), v3 (`project_id`/`project.type`, flat `resource_id`), and v5+ (`type.id`, `resource.id`).
 
